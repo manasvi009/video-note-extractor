@@ -1,0 +1,121 @@
+services:
+  - type: web
+    name: video-note-extractor-api
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        sync: false
+      - key: API_BASE_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: video-note-extractor-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromDatabase:
+          name: video-note-extractor-redis
+          property: connectionString
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: STORAGE_MODE
+        value: local
+      - key: LOCAL_STORAGE_PATH
+        value: ./storage
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: OPENAI_CHAT_MODEL
+        value: gpt-4.1-mini
+      - key: WHISPER_MODEL
+        value: base
+      - key: ENABLE_DEMO_DATA
+        value: false
+      - key: AUTH_PROVIDER
+        value: nextauth
+      - key: CORS_ORIGINS
+        sync: false
+      - key: MAX_REQUESTS_PER_MINUTE
+        value: "60"
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "1024"
+      - key: ALLOWED_UPLOAD_EXTENSIONS
+        value: '["mp4","mp3","wav","mov","mkv"]'
+
+  - type: worker
+    name: video-note-extractor-worker
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    dockerCommand: celery -A app.workers.celery_app.celery_app worker --loglevel=info
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        sync: false
+      - key: API_BASE_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: video-note-extractor-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromDatabase:
+          name: video-note-extractor-redis
+          property: connectionString
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: STORAGE_MODE
+        value: local
+      - key: LOCAL_STORAGE_PATH
+        value: ./storage
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: OPENAI_CHAT_MODEL
+        value: gpt-4.1-mini
+      - key: WHISPER_MODEL
+        value: base
+      - key: ENABLE_DEMO_DATA
+        value: false
+      - key: AUTH_PROVIDER
+        value: nextauth
+      - key: CORS_ORIGINS
+        sync: false
+      - key: MAX_REQUESTS_PER_MINUTE
+        value: "60"
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "1024"
+      - key: ALLOWED_UPLOAD_EXTENSIONS
+        value: '["mp4","mp3","wav","mov","mkv"]'
+
+databases:
+  - name: video-note-extractor-postgres
+    databaseName: video_note_extractor
+    user: video_note_extractor
+    plan: free
+    postgresMajorVersion: "16"
+    ipAllowList: []
+
+  - name: video-note-extractor-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []

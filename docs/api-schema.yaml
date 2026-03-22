@@ -1,0 +1,167 @@
+openapi: 3.1.0
+info:
+  title: Video Note Extractor API
+  version: 1.0.0
+  description: >-
+    API surface for creating video extraction jobs, tracking progress, searching transcript chunks,
+    asking grounded questions, and exporting structured notes.
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: API is healthy
+  /api/v1/jobs:
+    get:
+      summary: List jobs
+      responses:
+        "200":
+          description: List of video jobs
+    post:
+      summary: Create extraction job from URL metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJobRequest"
+      responses:
+        "201":
+          description: Created job detail
+  /api/v1/jobs/upload:
+    post:
+      summary: Create extraction job from uploaded media
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                title:
+                  type: string
+                mode:
+                  type: string
+                source_type:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Created job detail
+  /api/v1/jobs/{job_id}:
+    get:
+      summary: Get full job detail
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job detail payload
+  /api/v1/jobs/{job_id}/retry:
+    post:
+      summary: Retry a failed or queued job
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Refreshed job detail
+  /api/v1/jobs/{job_id}/chat:
+    post:
+      summary: Ask a grounded question about a job transcript
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question:
+                  type: string
+      responses:
+        "200":
+          description: Grounded answer with citations
+  /api/v1/jobs/{job_id}/export:
+    post:
+      summary: Export notes, transcript, or action items
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind:
+                  type: string
+                  enum: [pdf, docx, markdown, json, srt, vtt, txt, csv]
+      responses:
+        "200":
+          description: Base64-encoded export artifact
+  /api/v1/search:
+    get:
+      summary: Search transcript chunks across jobs
+      parameters:
+        - in: query
+          name: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search results with timestamps
+  /api/v1/stream/jobs/{job_id}:
+    get:
+      summary: Stream progress updates via SSE
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Server-sent event stream
+components:
+  schemas:
+    CreateJobRequest:
+      type: object
+      required: [project_id, title, source_type, mode]
+      properties:
+        project_id:
+          type: string
+        title:
+          type: string
+        source_type:
+          type: string
+          enum: [url, file, recording]
+        source_url:
+          type: string
+          format: uri
+        filename:
+          type: string
+        mode:
+          type: string
+          enum: [lecture, meeting, creator, podcast]
