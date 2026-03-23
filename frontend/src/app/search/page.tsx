@@ -1,11 +1,12 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Card } from "@/components/ui/card";
 import { searchJobs } from "@/lib/api";
+import { listStoredJobs, subscribeToStoredJobs } from "@/lib/demo-store";
 import type { SearchResult } from "@/lib/types";
 import { formatTimestamp, sentenceCase } from "@/lib/utils";
 
@@ -13,6 +14,15 @@ export default function SearchPage() {
   const [query, setQuery] = useState("concepts");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [indexedCount, setIndexedCount] = useState(0);
+
+  useEffect(() => {
+    const sync = () => {
+      setIndexedCount(listStoredJobs().filter((job) => job.status === "completed").length);
+    };
+    sync();
+    return subscribeToStoredJobs(sync);
+  }, []);
 
   async function onSearch() {
     setLoading(true);
@@ -31,6 +41,7 @@ export default function SearchPage() {
         <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">
           Run semantic-style lookup over transcript chunks, then jump into the job workspace with the most relevant timestamp.
         </p>
+        <div className="mt-4 text-sm text-muted">Indexed workspaces available right now: {indexedCount}</div>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
           <input
             value={query}
@@ -71,7 +82,7 @@ export default function SearchPage() {
         ))}
         {!results.length ? (
           <Card className="p-8 text-sm leading-7 text-muted">
-            Search results will appear here with title, supporting snippet, score, and timestamp.
+            Search results will appear here with title, supporting snippet, score, and timestamp. Completed jobs become searchable automatically.
           </Card>
         ) : null}
       </div>

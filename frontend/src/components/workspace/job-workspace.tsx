@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   CheckCircle2,
@@ -10,17 +10,11 @@ import {
   Search,
   Sparkles,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { useJobStream } from "@/hooks/use-job-stream";
 import { askJob, exportJob } from "@/lib/api";
-import type { Citation, ExportResponse, JobDetail, SummaryStructure } from "@/lib/types";
-import {
-  downloadBase64File,
-  formatRelativeDate,
-  formatTimestamp,
-  sentenceCase,
-} from "@/lib/utils";
+import type { Citation, ChatHistoryItem, ExportResponse, JobDetail, SummaryStructure } from "@/lib/types";
+import { downloadBase64File, formatRelativeDate, formatTimestamp, sentenceCase } from "@/lib/utils";
 
 const tabs = [
   { id: "summary", label: "Summary", icon: Sparkles },
@@ -43,14 +37,19 @@ const exportOptions = [
 ] as const;
 
 export function JobWorkspace({ job }: { job: JobDetail }) {
-  const { status, progress } = useJobStream(job.id, job.status, job.progress);
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("summary");
   const [workspaceSearch, setWorkspaceSearch] = useState("");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<Citation[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>(job.chat_history);
   const [asking, setAsking] = useState(false);
   const [exported, setExported] = useState<ExportResponse | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setChatHistory(job.chat_history);
+  }, [job.chat_history]);
 
   const summary = job.summaries[0]?.structured_json as SummaryStructure | undefined;
 
@@ -78,20 +77,41 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
     }
 
     setAsking(true);
+    setError("");
     try {
       const response = await askJob(job.id, question);
       setAnswer(response.answer);
       setCitations(response.citations);
+      setChatHistory((current) => [
+        {
+          id: `local-${Date.now()}`,
+          question,
+          answer: response.answer,
+          citations_json: response.citations,
+          created_at: new Date().toISOString(),
+        },
+        ...current,
+      ]);
+      setQuestion("");
+    } catch (askError) {
+      setError(askError instanceof Error ? askError.message : "Unable to ask a question right now.");
     } finally {
       setAsking(false);
     }
   }
 
   async function onExport(kind: (typeof exportOptions)[number]["kind"]) {
-    const result = await exportJob(job.id, kind);
-    setExported(result);
-    downloadBase64File(result.file_name, result.media_type, result.content_base64);
+    try {
+      setError("");
+      const result = await exportJob(job.id, kind);
+      setExported(result);
+      downloadBase64File(result.file_name, result.media_type, result.content_base64);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "Unable to export this file.");
+    }
   }
+
+  const isCompleted = job.status === "completed";
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
@@ -102,16 +122,16 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
               <p className="text-sm uppercase tracking-[0.28em] text-muted">Workspace</p>
               <h1 className="mt-2 text-3xl font-bold sm:text-4xl">{job.title}</h1>
               <p className="mt-3 text-sm leading-7 text-muted">
-                {job.author ?? "Unknown source"} - {sentenceCase(job.mode)} mode - {job.language ?? "en"} - Created {formatRelativeDate(job.created_at)}
+                {job.author ?? "Unknown source"} • {sentenceCase(job.mode)} mode • {job.language ?? "pending"} • Created {formatRelativeDate(job.created_at)}
               </p>
             </div>
             <div className="min-w-[260px] rounded-[22px] border border-border bg-white/50 p-4 dark:bg-slate-950/30">
               <div className="flex items-center justify-between text-sm">
-                <span className="font-medium capitalize">{status}</span>
-                <span>{progress}%</span>
+                <span className="font-medium capitalize">{job.status}</span>
+                <span>{job.progress}%</span>
               </div>
               <div className="mt-3 h-2 rounded-full bg-slate-200 dark:bg-slate-800">
-                <div className="h-full rounded-full bg-gradient-to-r from-accent to-accentWarm" style={{ width: `${progress}%` }} />
+                <div className="h-full rounded-full bg-gradient-to-r from-accent to-accentWarm" style={{ width: `${job.progress}%` }} />
               </div>
               <div className="mt-4 grid grid-cols-3 gap-3 text-xs text-muted">
                 <div>
@@ -129,6 +149,12 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
               </div>
             </div>
           </div>
+
+          {!isCompleted ? (
+            <div className="mt-5 rounded-[22px] border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-muted">
+              This extraction is still processing. Transcript, notes, timestamps, search, Ask AI, and exports will fill in automatically as the job completes.
+            </div>
+          ) : null}
 
           <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto]">
             <div className="rounded-full border border-border bg-white/45 px-4 py-3 dark:bg-slate-950/30">
@@ -157,9 +183,11 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
           </div>
         </div>
 
+        {error ? <div className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">{error}</div> : null}
+
         {activeTab === "summary" && (
           <div className="grid gap-4">
-            <SectionCard title="Overview" body={summary?.overview ?? job.summaries[0]?.content_markdown ?? "No overview available."} />
+            <SectionCard title="Overview" body={summary?.overview ?? job.summaries[0]?.content_markdown ?? "No overview available yet."} />
             <div className="grid gap-4 lg:grid-cols-2">
               <ListCard title="Key Takeaways" items={summary?.key_takeaways ?? []} />
               <ListCard title="Questions Discussed" items={summary?.questions_discussed ?? []} />
@@ -175,6 +203,7 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
                     <p className="mt-2 text-sm leading-7 text-muted">{section.summary}</p>
                   </div>
                 ))}
+                {!summary?.section_summary?.length ? <EmptyState label="Summary sections will appear once processing completes." /> : null}
               </div>
             </div>
           </div>
@@ -188,6 +217,7 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-muted">{section.content_markdown}</p>
               </div>
             ))}
+            {!job.summaries.length ? <EmptyState label="Notes will appear once summarization finishes." /> : null}
             <div className="glass rounded-[24px] border border-border p-6">
               <h2 className="text-lg font-semibold">Definitions and Concepts</h2>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -197,6 +227,7 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
                     <p className="mt-2 text-sm leading-7 text-muted">{definition.definition}</p>
                   </div>
                 ))}
+                {!summary?.definitions?.length ? <EmptyState label="Definitions will be extracted from completed lecture and discussion notes." /> : null}
               </div>
             </div>
           </div>
@@ -210,7 +241,7 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
                   <div>
                     <p className="font-medium">{item.description}</p>
                     <p className="mt-2 text-sm text-muted">
-                      Owner: {item.owner ?? "Unassigned"} - Due: {item.due_hint ?? "None"}
+                      Owner: {item.owner ?? "Unassigned"} • Due: {item.due_hint ?? "None"}
                     </p>
                   </div>
                   {item.completed ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : null}
@@ -236,6 +267,7 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
                 </div>
               </button>
             ))}
+            {!job.timestamps.length ? <EmptyState label="Important timestamps will appear after the transcript is indexed." /> : null}
           </div>
         )}
 
@@ -253,7 +285,7 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
                   <p className="mt-3 text-sm leading-7 text-muted">{chunk.text}</p>
                 </div>
               ))}
-              {!filteredTranscript.length ? <EmptyState label="No transcript chunks matched this search." /> : null}
+              {!filteredTranscript.length ? <EmptyState label="Transcript chunks will appear here as processing completes or after your search is cleared." /> : null}
             </div>
           </div>
         )}
@@ -271,12 +303,13 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
                 <button
                   type="button"
                   onClick={onAsk}
-                  disabled={asking || !question.trim()}
+                  disabled={asking || !question.trim() || !isCompleted}
                   className="rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60 dark:bg-white dark:text-slate-950"
                 >
                   {asking ? "Asking..." : "Ask"}
                 </button>
               </div>
+              {!isCompleted ? <p className="mt-4 text-sm text-muted">Ask AI becomes available after the transcript and summaries finish processing.</p> : null}
               {answer ? (
                 <div className="mt-6 space-y-4">
                   <p className="leading-7">{answer}</p>
@@ -284,7 +317,7 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
                     <div key={`${citation.start_seconds}-${index}`} className="rounded-[20px] border border-border p-4 text-sm text-muted">
                       <p>{citation.snippet}</p>
                       <p className="mt-2 text-xs uppercase tracking-[0.18em] text-muted">
-                        {citation.label ?? "Speaker"} - {formatTimestamp(citation.start_seconds)} - {formatTimestamp(citation.end_seconds)}
+                        {citation.label ?? "Speaker"} • {formatTimestamp(citation.start_seconds)} • {formatTimestamp(citation.end_seconds)}
                       </p>
                     </div>
                   ))}
@@ -295,14 +328,14 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
             <div className="glass rounded-[24px] border border-border p-6">
               <h2 className="text-lg font-semibold">Chat history</h2>
               <div className="mt-4 space-y-4">
-                {job.chat_history.map((entry) => (
+                {chatHistory.map((entry) => (
                   <div key={entry.id} className="rounded-[20px] border border-border bg-white/45 p-4 dark:bg-slate-950/30">
                     <p className="text-xs uppercase tracking-[0.18em] text-muted">{formatRelativeDate(entry.created_at)}</p>
                     <p className="mt-2 font-medium">{entry.question}</p>
                     <p className="mt-2 text-sm leading-7 text-muted">{entry.answer}</p>
                   </div>
                 ))}
-                {!job.chat_history.length ? <EmptyState label="Questions you ask here will be stored with transcript citations." /> : null}
+                {!chatHistory.length ? <EmptyState label="Questions you ask here will be stored with transcript citations." /> : null}
               </div>
             </div>
           </div>
@@ -314,7 +347,7 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
           <h2 className="text-lg font-semibold">Source metadata</h2>
           <div className="mt-4 space-y-3 text-sm text-muted">
             <p>Source type: {sentenceCase(job.source_type)}</p>
-            <p>Source URL: {job.source_url ?? "Uploaded file"}</p>
+            <p>Source URL: {job.source_url ?? job.filename ?? "Uploaded file"}</p>
             <p>Duration: {formatTimestamp(job.duration_seconds ?? 0)}</p>
             <p>Pipeline: {((job.metadata_json.ingest as { pipeline?: string[] } | undefined)?.pipeline ?? []).join(" -> ")}</p>
           </div>
@@ -328,7 +361,8 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
                 key={option.kind}
                 type="button"
                 onClick={() => onExport(option.kind)}
-                className="flex items-center justify-center gap-2 rounded-2xl border border-border px-4 py-3 text-sm font-medium transition hover:border-accent/50"
+                disabled={!isCompleted}
+                className="flex items-center justify-center gap-2 rounded-2xl border border-border px-4 py-3 text-sm font-medium transition hover:border-accent/50 disabled:opacity-50"
               >
                 <Download className="h-4 w-4" />
                 {option.label}
@@ -361,6 +395,7 @@ export function JobWorkspace({ job }: { job: JobDetail }) {
                 <p className="mt-2 text-sm leading-6 text-muted">{stamp.description}</p>
               </div>
             ))}
+            {!job.timestamps.length ? <EmptyState label="Timeline markers appear here after indexing completes." /> : null}
           </div>
         </div>
       </aside>
@@ -391,4 +426,3 @@ function ListCard({ title, items }: { title: string; items: string[] }) {
 function EmptyState({ label }: { label: string }) {
   return <div className="rounded-[20px] border border-dashed border-border p-6 text-sm text-muted">{label}</div>;
 }
-

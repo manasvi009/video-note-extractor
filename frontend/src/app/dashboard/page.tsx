@@ -1,12 +1,23 @@
-import Link from "next/link";
+﻿"use client";
 
-import { getJobs } from "@/lib/api";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
 import { JobTable } from "@/components/dashboard/job-table";
 import { StatsGrid } from "@/components/dashboard/stats-grid";
 import { Card } from "@/components/ui/card";
+import { listStoredJobs, subscribeToStoredJobs } from "@/lib/demo-store";
+import type { JobListItem } from "@/lib/types";
 
-export default async function DashboardPage() {
-  const jobs = await getJobs();
+export default function DashboardPage() {
+  const [jobs, setJobs] = useState<JobListItem[]>([]);
+
+  useEffect(() => {
+    const sync = () => setJobs(listStoredJobs());
+    sync();
+    return subscribeToStoredJobs(sync);
+  }, []);
+
   const latest = jobs[0];
 
   return (
@@ -27,7 +38,10 @@ export default async function DashboardPage() {
               <p className="mt-3 text-sm leading-7 text-muted">
                 {latest.mode} mode • {latest.source_type} source • {latest.progress}% pipeline progress
               </p>
-              <Link href={`/jobs/${latest.id}`} className="mt-6 inline-flex rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white dark:bg-white dark:text-slate-950">
+              <Link
+                href={`/jobs/${latest.id}`}
+                className="mt-6 inline-flex rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white dark:bg-white dark:text-slate-950"
+              >
                 Open workspace
               </Link>
             </>

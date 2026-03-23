@@ -1,6 +1,7 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import type { PropsWithChildren } from "react";
 
+import { AuthStatus } from "@/components/layout/auth-status";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 const navigation = [
@@ -24,9 +25,7 @@ export function SiteShell({ children }: PropsWithChildren) {
               </div>
             </Link>
             <div className="flex items-center gap-3 lg:hidden">
-              <Link href="/sign-in" className="text-sm text-muted">
-                Sign in
-              </Link>
+              <AuthStatus />
               <ThemeToggle />
             </div>
           </div>
@@ -40,9 +39,7 @@ export function SiteShell({ children }: PropsWithChildren) {
               ))}
             </nav>
             <div className="hidden items-center gap-3 lg:flex">
-              <Link href="/sign-in" className="text-sm text-muted">
-                Sign in
-              </Link>
+              <AuthStatus />
               <ThemeToggle />
             </div>
           </div>
