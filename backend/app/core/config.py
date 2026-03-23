@@ -23,8 +23,10 @@ class Settings(BaseSettings):
     s3_secret_key: str | None = None
     s3_bucket: str = "video-note-extractor"
     openai_api_key: str | None = None
+    openai_api_base: str = "https://api.openai.com/v1"
     openai_embedding_model: str = "text-embedding-3-small"
     openai_chat_model: str = "gpt-4.1-mini"
+    openai_transcription_model: str = "whisper-1"
     whisper_model: str = "base"
     enable_demo_data: bool = True
     auth_provider: str = "nextauth"

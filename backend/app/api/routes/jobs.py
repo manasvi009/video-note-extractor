@@ -57,7 +57,7 @@ def create_job(payload: CreateJobRequest, db: Session = Depends(get_db)) -> JobD
     except Exception:
         pass
 
-    hydrated = service.process_demo_job(job.id) if job.status.value == "queued" else service.get_job(job.id)
+    hydrated = service.process_job(job.id) if job.status.value == "queued" else service.get_job(job.id)
     if hydrated is None:
         raise HTTPException(status_code=404, detail="Job not found after creation")
     return _serialize_detail(hydrated)
@@ -87,7 +87,7 @@ async def upload_job(
     )
     service = JobService(db)
     job = service.create_job(payload)
-    hydrated = service.process_demo_job(job.id)
+    hydrated = service.process_job(job.id)
     return _serialize_detail(hydrated)
 
 
@@ -103,7 +103,7 @@ def get_job(job_id: str, db: Session = Depends(get_db)) -> JobDetailResponse:
 def retry_job(job_id: str, db: Session = Depends(get_db)) -> JobDetailResponse:
     service = JobService(db)
     try:
-        job = service.process_demo_job(job_id)
+        job = service.process_job(job_id)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return _serialize_detail(job)

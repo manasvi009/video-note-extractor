@@ -7,8 +7,7 @@ from app.workers.celery_app import celery_app
 def process_video_job(job_id: str) -> dict:
     db = SessionLocal()
     try:
-        job = JobService(db).process_demo_job(job_id)
+        job = JobService(db).process_job(job_id)
         return {"job_id": job.id, "status": job.status.value}
     finally:
         db.close()
-

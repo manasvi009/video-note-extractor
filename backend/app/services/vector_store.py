@@ -42,12 +42,12 @@ class VectorStoreService:
         except Exception as error:  # pragma: no cover
             logger.warning("Qdrant unavailable during upsert_chunk: %s", error)
 
-    def search(self, *, job_id: str) -> list[dict[str, Any]]:
+    def search(self, *, job_id: str, query_vector: list[float]) -> list[dict[str, Any]]:
         try:
             self.ensure_collection()
             results = self.client.search(
                 collection_name=self.collection_name,
-                query_vector=[0.001] * 1536,
+                query_vector=query_vector,
                 limit=5,
                 query_filter={"must": [{"key": "job_id", "match": {"value": job_id}}]},
             )

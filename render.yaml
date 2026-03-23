@@ -15,7 +15,7 @@ services:
       - key: SECRET_KEY
         sync: false
       - key: API_BASE_URL
-        sync: false
+        value: https://video-note-extractor-api.onrender.com
       - key: DATABASE_URL
         fromDatabase:
           name: video-note-extractor-postgres
@@ -34,10 +34,14 @@ services:
         value: ./storage
       - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_API_BASE
+        value: https://api.openai.com/v1
       - key: OPENAI_EMBEDDING_MODEL
         value: text-embedding-3-small
       - key: OPENAI_CHAT_MODEL
         value: gpt-4.1-mini
+      - key: OPENAI_TRANSCRIPTION_MODEL
+        value: whisper-1
       - key: WHISPER_MODEL
         value: base
       - key: ENABLE_DEMO_DATA
@@ -45,7 +49,7 @@ services:
       - key: AUTH_PROVIDER
         value: nextauth
       - key: CORS_ORIGINS
-        sync: false
+        value: '["https://frontend-6wr3kqyp2-manasvi009s-projects.vercel.app","https://frontend-xi-sooty-72.vercel.app"]'
       - key: MAX_REQUESTS_PER_MINUTE
         value: "60"
       - key: MAX_UPLOAD_SIZE_MB
@@ -69,7 +73,7 @@ services:
       - key: SECRET_KEY
         sync: false
       - key: API_BASE_URL
-        sync: false
+        value: https://video-note-extractor-api.onrender.com
       - key: DATABASE_URL
         fromDatabase:
           name: video-note-extractor-postgres
@@ -88,10 +92,14 @@ services:
         value: ./storage
       - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_API_BASE
+        value: https://api.openai.com/v1
       - key: OPENAI_EMBEDDING_MODEL
         value: text-embedding-3-small
       - key: OPENAI_CHAT_MODEL
         value: gpt-4.1-mini
+      - key: OPENAI_TRANSCRIPTION_MODEL
+        value: whisper-1
       - key: WHISPER_MODEL
         value: base
       - key: ENABLE_DEMO_DATA
@@ -99,7 +107,7 @@ services:
       - key: AUTH_PROVIDER
         value: nextauth
       - key: CORS_ORIGINS
-        sync: false
+        value: '["https://frontend-6wr3kqyp2-manasvi009s-projects.vercel.app","https://frontend-xi-sooty-72.vercel.app"]'
       - key: MAX_REQUESTS_PER_MINUTE
         value: "60"
       - key: MAX_UPLOAD_SIZE_MB
