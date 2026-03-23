@@ -29,8 +29,6 @@ services:
           name: video-note-extractor-qdrant
           type: pserv
           property: hostport
-      - key: QDRANT_API_KEY
-        sync: false
       - key: STORAGE_MODE
         value: local
       - key: LOCAL_STORAGE_PATH
@@ -90,8 +88,6 @@ services:
           name: video-note-extractor-qdrant
           type: pserv
           property: hostport
-      - key: QDRANT_API_KEY
-        sync: false
       - key: STORAGE_MODE
         value: local
       - key: LOCAL_STORAGE_PATH
