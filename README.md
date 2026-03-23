@@ -79,18 +79,23 @@ cd backend
 celery -A app.workers.celery_app.celery_app worker --loglevel=info
 ```
 
-## Demo Mode vs Production Integrations
+## Production Flow
 
-The repository includes a seeded demo pipeline so the product works immediately in local development. The current demo path simulates media ingestion, transcript generation, chunking, and summarization.
+The current codebase is wired for a production-style flow:
 
-To move to real production processing, replace the demo adapters in `backend/app/services` with:
+- authentication via NextAuth credentials on the frontend
+- authenticated FastAPI routes backed by JWT access tokens
+- per-user job ownership in PostgreSQL
+- URL and upload ingestion validation
+- `yt-dlp` + FFmpeg media preparation
+- OpenAI transcription, embeddings, summarization, and grounded Q&A when `OPENAI_API_KEY` is configured
+- Qdrant transcript indexing for semantic retrieval
+- Redis/Celery worker support, with background-task fallback when a worker is unavailable
 
-- `yt-dlp` acquisition for URL-based jobs
-- FFmpeg extraction for audio normalization
-- Whisper or WhisperX transcription with timestamps and diarization
-- embedding generation for transcript chunks
-- LLM summarization and grounded answering over retrieved transcript evidence
-- S3-compatible blob storage for uploaded media and exported artifacts
+When `ENABLE_DEMO_DATA=true`, the backend seeds a real demo user for local testing:
+
+- email: `demo@videonote.app`
+- password: `demo-password`
 
 ## Core API Endpoints
 
@@ -113,9 +118,44 @@ To move to real production processing, replace the demo adapters in `backend/app
 - Vector database: Qdrant Cloud or self-hosted Docker
 - Object storage: AWS S3, Cloudflare R2, MinIO, or another S3-compatible service
 
-## Notes on Authentication
+## Required Environment Variables
 
-The frontend is scaffolded for NextAuth-based integration. Provider credentials and callbacks can be added through environment configuration without changing the workspace structure.
+Backend:
+
+- `SECRET_KEY`
+- `DATABASE_URL`
+- `REDIS_URL`
+- `QDRANT_URL`
+- `OPENAI_API_KEY`
+- `OPENAI_API_BASE`
+- `OPENAI_EMBEDDING_MODEL`
+- `OPENAI_CHAT_MODEL`
+- `OPENAI_TRANSCRIPTION_MODEL`
+- `LOCAL_STORAGE_PATH`
+- `CORS_ORIGINS`
+
+Frontend:
+
+- `NEXT_PUBLIC_API_BASE_URL`
+- `NEXT_PUBLIC_APP_URL`
+- `NEXTAUTH_URL`
+- `NEXTAUTH_SECRET`
+- `AUTH_TRUST_HOST=true`
+
+## Deployment Notes
+
+Vercel frontend:
+
+1. Set `NEXT_PUBLIC_API_BASE_URL` to your deployed FastAPI origin.
+2. Set `NEXTAUTH_URL` to your Vercel frontend URL.
+3. Set `NEXTAUTH_SECRET` to a strong random value.
+
+Render backend:
+
+1. Apply [render.yaml](./render.yaml).
+2. Fill `SECRET_KEY` and `OPENAI_API_KEY`.
+3. Ensure `CORS_ORIGINS` includes your Vercel URL.
+4. Run both the API and worker services.
 
 ## Additional Documentation
 

@@ -1,22 +1,49 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 
 import { JobTable } from "@/components/dashboard/job-table";
 import { StatsGrid } from "@/components/dashboard/stats-grid";
 import { Card } from "@/components/ui/card";
-import { listStoredJobs, subscribeToStoredJobs } from "@/lib/demo-store";
+import { getJobs } from "@/lib/api";
 import type { JobListItem } from "@/lib/types";
 
 export default function DashboardPage() {
+  const { status } = useSession();
   const [jobs, setJobs] = useState<JobListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const sync = () => setJobs(listStoredJobs());
-    sync();
-    return subscribeToStoredJobs(sync);
-  }, []);
+    if (status !== "authenticated") {
+      setLoading(false);
+      return;
+    }
+
+    let active = true;
+    getJobs()
+      .then((data) => {
+        if (active) {
+          setJobs(data);
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setError(loadError instanceof Error ? loadError.message : "Unable to load jobs.");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [status]);
 
   const latest = jobs[0];
 
@@ -50,8 +77,19 @@ export default function DashboardPage() {
           )}
         </Card>
       </section>
-      <StatsGrid jobs={jobs} />
-      <JobTable jobs={jobs} />
+
+      {status !== "authenticated" ? (
+        <Card className="p-8 text-sm text-muted">Sign in to load your extraction history.</Card>
+      ) : loading ? (
+        <Card className="p-8 text-sm text-muted">Loading dashboard...</Card>
+      ) : error ? (
+        <Card className="p-8 text-sm text-rose-700">{error}</Card>
+      ) : (
+        <>
+          <StatsGrid jobs={jobs} />
+          {jobs.length ? <JobTable jobs={jobs} /> : <Card className="p-8 text-sm text-muted">No jobs yet. Start with a new extraction.</Card>}
+        </>
+      )}
     </main>
   );
 }

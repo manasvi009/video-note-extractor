@@ -3,13 +3,14 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import OutputMode, Project, SourceType, User
 from app.schemas.job import CreateJobRequest
+from app.services.auth_service import _hash_password
 from app.services.job_service import JobService
 
 
 def seed_demo(db: Session) -> None:
     user = db.execute(select(User).where(User.email == "demo@videonote.app")).scalar_one_or_none()
     if not user:
-        user = User(id="demo-user", email="demo@videonote.app", name="Demo User")
+        user = User(id="demo-user", email="demo@videonote.app", name="Demo User", password_hash=_hash_password("demo-password"))
         db.add(user)
         db.flush()
 
@@ -20,7 +21,7 @@ def seed_demo(db: Session) -> None:
         db.commit()
         db.refresh(project)
 
-    jobs = JobService(db).list_jobs()
+    jobs = JobService(db).list_jobs(user.id)
     if jobs:
         return
 
@@ -35,8 +36,9 @@ def seed_demo(db: Session) -> None:
                 project_id=project.id,
                 title=title,
                 source_type=SourceType.url,
-                source_url="https://example.com/video",
+                source_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
                 mode=mode,
-            )
+            ),
+            user,
         )
-        service.process_demo_job(job.id)
+        service.process_job(job.id, user.id)

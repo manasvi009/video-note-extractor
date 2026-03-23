@@ -24,13 +24,9 @@ export function SiteShell({ children }: PropsWithChildren) {
                 <p className="text-sm text-muted">Long-form content into grounded notes</p>
               </div>
             </Link>
-            <div className="flex items-center gap-3 lg:hidden">
-              <AuthStatus />
-              <ThemeToggle />
-            </div>
           </div>
 
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 lg:gap-4">
             <nav className="flex flex-wrap items-center gap-3 text-sm text-muted">
               {navigation.map((item) => (
                 <Link key={item.href} href={item.href}>
@@ -38,7 +34,7 @@ export function SiteShell({ children }: PropsWithChildren) {
                 </Link>
               ))}
             </nav>
-            <div className="hidden items-center gap-3 lg:flex">
+            <div className="flex items-center gap-3">
               <AuthStatus />
               <ThemeToggle />
             </div>

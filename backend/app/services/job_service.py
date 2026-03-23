@@ -9,9 +9,11 @@ from app.models.entities import (
     EmbeddingMetadata,
     JobStatus,
     OutputMode,
+    Project,
     Summary,
     TimestampMarker,
     TranscriptChunk,
+    User,
     VideoJob,
 )
 from app.schemas.job import AskResponse, Citation, CreateJobRequest
@@ -30,18 +32,19 @@ class JobService:
         self.media_pipeline = MediaPipelineService()
         self.openai = OpenAIService()
 
-    def list_jobs(self) -> list[VideoJob]:
+    def list_jobs(self, user_id: str) -> list[VideoJob]:
         result = self.db.execute(
             select(VideoJob)
+            .where(VideoJob.user_id == user_id)
             .options(joinedload(VideoJob.transcript_chunks), joinedload(VideoJob.action_items))
             .order_by(VideoJob.created_at.desc())
         )
         return list(result.scalars().unique())
 
-    def get_job(self, job_id: str) -> VideoJob | None:
+    def get_job(self, job_id: str, user_id: str) -> VideoJob | None:
         query = (
             select(VideoJob)
-            .where(VideoJob.id == job_id)
+            .where(VideoJob.id == job_id, VideoJob.user_id == user_id)
             .options(
                 joinedload(VideoJob.transcript_chunks),
                 joinedload(VideoJob.summaries),
@@ -52,20 +55,23 @@ class JobService:
         )
         return self.db.execute(query).scalars().unique().first()
 
-    def create_job(self, payload: CreateJobRequest) -> VideoJob:
+    def create_job(self, payload: CreateJobRequest, user: User) -> VideoJob:
         hash_source = f"{payload.title}:{payload.source_url or payload.filename or payload.project_id}:{payload.mode.value}"
         content_hash = compute_content_hash(hash_source)
-        existing = self.db.execute(select(VideoJob).where(VideoJob.content_hash == content_hash)).scalar_one_or_none()
+        existing = self.db.execute(
+            select(VideoJob).where(VideoJob.content_hash == content_hash, VideoJob.user_id == user.id)
+        ).scalar_one_or_none()
         if existing:
             existing.metadata_json = existing.metadata_json | {"ingest": {"deduplicated": True}}
             self.db.commit()
             self.db.refresh(existing)
             return existing
 
+        project = self._resolve_project(user.id, payload.project_id)
         source_label = str(payload.source_url) if payload.source_url else payload.filename or "uploaded media"
         job = VideoJob(
-            project_id=payload.project_id,
-            user_id="demo-user",
+            project_id=project.id,
+            user_id=user.id,
             title=payload.title,
             source_type=payload.source_type,
             source_url=str(payload.source_url) if payload.source_url else None,
@@ -93,10 +99,10 @@ class JobService:
         self.db.refresh(job)
         return job
 
-    def process_job(self, job_id: str) -> VideoJob:
+    def process_job(self, job_id: str, user_id: str | None = None) -> VideoJob:
         if self.openai.is_configured():
             try:
-                return self._process_with_openai(job_id)
+                return self._process_with_openai(job_id, user_id)
             except Exception as error:
                 job = self.db.get(VideoJob, job_id)
                 if job:
@@ -104,10 +110,10 @@ class JobService:
                     job.error_message = str(error)
                     self.db.commit()
                 raise
-        return self._process_demo_job(job_id)
+        return self._process_demo_job(job_id, user_id)
 
-    def ask(self, job_id: str, question: str) -> AskResponse:
-        job = self.get_job(job_id)
+    def ask(self, job_id: str, question: str, user_id: str) -> AskResponse:
+        job = self.get_job(job_id, user_id)
         if not job:
             raise ValueError("Job not found")
 
@@ -157,10 +163,10 @@ class JobService:
         self.db.commit()
         return AskResponse(answer=answer, citations=citations, grounded=grounded)
 
-    def search(self, term: str) -> list[dict]:
+    def search(self, term: str, user_id: str) -> list[dict]:
         normalized = term.strip().lower()
         results: list[dict] = []
-        for job in self.list_jobs():
+        for job in self.list_jobs(user_id):
             for chunk, score in self._rank_chunks(job.transcript_chunks, normalized)[:6]:
                 if score <= 0:
                     continue
@@ -179,12 +185,14 @@ class JobService:
         results.sort(key=lambda item: item["score"], reverse=True)
         return results[:10]
 
-    def _process_with_openai(self, job_id: str) -> VideoJob:
+    def _process_with_openai(self, job_id: str, user_id: str | None) -> VideoJob:
         job = self.db.get(VideoJob, job_id)
         if not job:
             raise ValueError("Job not found")
+        if user_id and job.user_id != user_id:
+            raise ValueError("Job not found")
         if job.status == JobStatus.completed:
-            return self.get_job(job_id) or job
+            return self.get_job(job_id, job.user_id) or job
 
         self._clear_job_outputs(job_id)
         job.status = JobStatus.processing
@@ -336,15 +344,17 @@ class JobService:
         job.error_message = None
         self.db.commit()
         self.db.refresh(job)
-        return self.get_job(job.id) or job
+        return self.get_job(job.id, job.user_id) or job
 
-    def _process_demo_job(self, job_id: str) -> VideoJob:
+    def _process_demo_job(self, job_id: str, user_id: str | None) -> VideoJob:
         job = self.db.get(VideoJob, job_id)
         if not job:
             raise ValueError("Job not found")
+        if user_id and job.user_id != user_id:
+            raise ValueError("Job not found")
 
         if job.status == JobStatus.completed:
-            existing = self.get_job(job_id)
+            existing = self.get_job(job_id, job.user_id)
             return existing or job
 
         self._clear_job_outputs(job_id)
@@ -449,7 +459,24 @@ class JobService:
         job.error_message = None
         self.db.commit()
         self.db.refresh(job)
-        return self.get_job(job.id) or job
+        return self.get_job(job.id, job.user_id) or job
+
+    def _resolve_project(self, user_id: str, project_id: str | None) -> Project:
+        if project_id:
+            project = self.db.execute(
+                select(Project).where(Project.id == project_id, Project.user_id == user_id)
+            ).scalar_one_or_none()
+            if project:
+                return project
+
+        project = self.db.execute(select(Project).where(Project.user_id == user_id).order_by(Project.created_at.asc())).scalar_one_or_none()
+        if project:
+            return project
+
+        project = Project(user_id=user_id, name="Default Workspace", description="Primary extraction workspace")
+        self.db.add(project)
+        self.db.flush()
+        return project
 
     def _retrieve_chunks(self, job: VideoJob, question: str) -> list[TranscriptChunk]:
         if self.openai.is_configured() and job.transcript_chunks:

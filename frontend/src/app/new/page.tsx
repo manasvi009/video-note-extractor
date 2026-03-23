@@ -3,9 +3,11 @@
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast-provider";
 import { createJob, uploadJob } from "@/lib/api";
 import type { OutputMode, SourceType } from "@/lib/types";
 
@@ -51,6 +53,8 @@ const presets = [
 
 export default function NewExtractionPage() {
   const router = useRouter();
+  const { status } = useSession();
+  const { pushToast } = useToast();
   const [title, setTitle] = useState("");
   const [sourceType, setSourceType] = useState<SourceType>("url");
   const [sourceUrl, setSourceUrl] = useState("");
@@ -67,10 +71,12 @@ export default function NewExtractionPage() {
     setError("");
 
     try {
+      if (status !== "authenticated") {
+        throw new Error("Sign in before creating an extraction.");
+      }
       const job =
         sourceType === "url"
           ? await createJob({
-              project_id: "demo-project",
               title,
               source_type: sourceType,
               source_url: sourceUrl,
@@ -83,9 +89,12 @@ export default function NewExtractionPage() {
               file: file as File,
               mode,
             });
+      pushToast({ tone: "success", title: "Extraction created", description: "Your job has been queued for processing." });
       router.push(`/jobs/${job.id}`);
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Failed to create extraction job.");
+      const message = submissionError instanceof Error ? submissionError.message : "Failed to create extraction job.";
+      setError(message);
+      pushToast({ tone: "error", title: "Unable to create extraction", description: message });
     } finally {
       setSubmitting(false);
     }
@@ -215,7 +224,7 @@ export default function NewExtractionPage() {
           <Button
             type="submit"
             className="w-full"
-            disabled={submitting || !title || (sourceType === "url" ? !sourceUrl : !file)}
+            disabled={status !== "authenticated" || submitting || !title || (sourceType === "url" ? !sourceUrl : !file)}
           >
             {submitting ? "Creating extraction..." : "Create extraction"}
           </Button>

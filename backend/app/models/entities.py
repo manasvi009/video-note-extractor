@@ -43,6 +43,7 @@ class User(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uuid_str)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
+    password_hash: Mapped[str] = mapped_column(String(255))
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -174,4 +175,3 @@ class EmbeddingMetadata(Base):
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
     job: Mapped[VideoJob] = relationship(back_populates="embeddings")
-

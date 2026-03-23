@@ -7,7 +7,7 @@ from app.models.entities import JobStatus, OutputMode, SourceType
 
 
 class CreateJobRequest(BaseModel):
-    project_id: str
+    project_id: str | None = None
     title: str = Field(min_length=3, max_length=300)
     source_type: SourceType
     source_url: HttpUrl | None = None

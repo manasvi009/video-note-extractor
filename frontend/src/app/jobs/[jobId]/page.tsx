@@ -1,44 +1,59 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 
 import { JobWorkspace } from "@/components/workspace/job-workspace";
 import { Card } from "@/components/ui/card";
-import { getStoredJob, subscribeToStoredJobs } from "@/lib/demo-store";
+import { getJob } from "@/lib/api";
 import type { JobDetail } from "@/lib/types";
 
 export default function JobDetailsPage({ params }: { params: { jobId: string } }) {
+  const { status } = useSession();
   const [job, setJob] = useState<JobDetail | null>(null);
-  const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const sync = () => {
-      setJob(getStoredJob(params.jobId));
-      setReady(true);
-    };
-    sync();
-    return subscribeToStoredJobs(sync);
-  }, [params.jobId]);
-
-  useEffect(() => {
-    if (!job || ["completed", "failed"].includes(job.status)) {
+    if (status !== "authenticated") {
+      setLoading(false);
       return;
     }
 
-    const timer = window.setInterval(() => {
-      setJob(getStoredJob(params.jobId));
-    }, 500);
+    let active = true;
+    const load = async () => {
+      try {
+        const payload = await getJob(params.jobId);
+        if (active) {
+          setJob(payload);
+          setError("");
+        }
+      } catch (loadError) {
+        if (active) {
+          setError(loadError instanceof Error ? loadError.message : "Unable to load extraction.");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
 
-    return () => window.clearInterval(timer);
-  }, [job, params.jobId]);
+    load();
+    const interval = window.setInterval(load, 2500);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [params.jobId, status]);
 
-  if (!ready) {
-    return (
-      <Card className="p-8 text-sm text-muted">
-        Loading extraction workspace...
-      </Card>
-    );
+  if (status !== "authenticated") {
+    return <Card className="p-8 text-sm text-muted">Sign in to open extraction workspaces.</Card>;
+  }
+
+  if (loading) {
+    return <Card className="p-8 text-sm text-muted">Loading extraction workspace...</Card>;
   }
 
   if (!job) {
@@ -47,9 +62,7 @@ export default function JobDetailsPage({ params }: { params: { jobId: string } }
         <Card className="p-8">
           <p className="text-sm uppercase tracking-[0.28em] text-muted">Missing job</p>
           <h1 className="mt-3 text-3xl font-bold">Extraction not found</h1>
-          <p className="mt-3 text-sm leading-7 text-muted">
-            This job is not available in the current browser workspace. Create a new extraction or open one from the dashboard.
-          </p>
+          <p className="mt-3 text-sm leading-7 text-muted">{error || "This extraction could not be loaded."}</p>
           <div className="mt-6 flex gap-3">
             <Link href="/new" className="rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white dark:bg-white dark:text-slate-950">
               New extraction

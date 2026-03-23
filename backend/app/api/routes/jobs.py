@@ -1,11 +1,12 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import rate_limit
+from app.api.deps import get_current_user, rate_limit
 from app.core.config import get_settings
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
+from app.models.entities import User
 from app.schemas.job import (
     AskRequest,
     AskResponse,
@@ -26,8 +27,8 @@ settings = get_settings()
 
 
 @router.get("", response_model=list[JobListItem], dependencies=[Depends(rate_limit())])
-def list_jobs(db: Session = Depends(get_db)) -> list[JobListItem]:
-    jobs = JobService(db).list_jobs()
+def list_jobs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[JobListItem]:
+    jobs = JobService(db).list_jobs(current_user.id)
     return [
         JobListItem(
             id=job.id,
@@ -45,19 +46,24 @@ def list_jobs(db: Session = Depends(get_db)) -> list[JobListItem]:
 
 
 @router.post("", response_model=JobDetailResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(rate_limit())])
-def create_job(payload: CreateJobRequest, db: Session = Depends(get_db)) -> JobDetailResponse:
+def create_job(
+    payload: CreateJobRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> JobDetailResponse:
     if payload.source_url:
         validate_source_url(str(payload.source_url))
 
     service = JobService(db)
-    job = service.create_job(payload)
+    job = service.create_job(payload, current_user)
 
     try:
         process_video_job.delay(job.id)
     except Exception:
-        pass
+        background_tasks.add_task(_process_job_background, job.id)
 
-    hydrated = service.process_job(job.id) if job.status.value == "queued" else service.get_job(job.id)
+    hydrated = service.get_job(job.id, current_user.id)
     if hydrated is None:
         raise HTTPException(status_code=404, detail="Job not found after creation")
     return _serialize_detail(hydrated)
@@ -65,12 +71,14 @@ def create_job(payload: CreateJobRequest, db: Session = Depends(get_db)) -> JobD
 
 @router.post("/upload", response_model=JobDetailResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(rate_limit())])
 async def upload_job(
+    background_tasks: BackgroundTasks,
     project_id: str = Form(...),
     title: str = Form(...),
     mode: str = Form(...),
     source_type: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> JobDetailResponse:
     validate_upload(file)
     upload_dir = settings.storage_path / "uploads"
@@ -86,44 +94,56 @@ async def upload_job(
         mode=mode,
     )
     service = JobService(db)
-    job = service.create_job(payload)
-    hydrated = service.process_job(job.id)
+    job = service.create_job(payload, current_user)
+    try:
+        process_video_job.delay(job.id)
+    except Exception:
+        background_tasks.add_task(_process_job_background, job.id)
+    hydrated = service.get_job(job.id, current_user.id)
     return _serialize_detail(hydrated)
 
 
 @router.get("/{job_id}", response_model=JobDetailResponse)
-def get_job(job_id: str, db: Session = Depends(get_db)) -> JobDetailResponse:
-    job = JobService(db).get_job(job_id)
+def get_job(job_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> JobDetailResponse:
+    job = JobService(db).get_job(job_id, current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return _serialize_detail(job)
 
 
 @router.post("/{job_id}/retry", response_model=JobDetailResponse)
-def retry_job(job_id: str, db: Session = Depends(get_db)) -> JobDetailResponse:
+def retry_job(job_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> JobDetailResponse:
     service = JobService(db)
     try:
-        job = service.process_job(job_id)
+        job = service.process_job(job_id, current_user.id)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return _serialize_detail(job)
 
 
 @router.post("/{job_id}/chat", response_model=AskResponse)
-def ask_job(job_id: str, payload: AskRequest, db: Session = Depends(get_db)) -> AskResponse:
+def ask_job(job_id: str, payload: AskRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> AskResponse:
     try:
-        return JobService(db).ask(job_id, payload.question)
+        return JobService(db).ask(job_id, payload.question, current_user.id)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.post("/{job_id}/export", response_model=ExportResponse)
-def export_job(job_id: str, payload: ExportRequest, db: Session = Depends(get_db)) -> ExportResponse:
+def export_job(job_id: str, payload: ExportRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> ExportResponse:
     service = JobService(db)
-    job = service.get_job(job_id)
+    job = service.get_job(job_id, current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return ExportResponse(**build_export(job, payload.kind))
+
+
+def _process_job_background(job_id: str) -> None:
+    db = SessionLocal()
+    try:
+        JobService(db).process_job(job_id)
+    finally:
+        db.close()
 
 
 def _serialize_detail(job) -> JobDetailResponse:

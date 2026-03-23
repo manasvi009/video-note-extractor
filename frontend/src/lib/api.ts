@@ -1,70 +1,67 @@
-﻿import type { AskResponse, ExportResponse, JobDetail, JobListItem, OutputMode, SearchResult, SourceType } from "@/lib/types";
-import {
-  askStoredJob,
-  createStoredJob,
-  exportStoredJob,
-  getStoredJob,
-  listStoredJobs,
-  searchStoredJobs,
-} from "@/lib/demo-store";
+import { getSession } from "next-auth/react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+import type { AskResponse, ExportResponse, JobDetail, JobListItem, OutputMode, SearchResult, SourceType } from "@/lib/types";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!API_BASE_URL) {
-    throw new Error("Remote API is not configured for this deployment.");
-  }
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "http://localhost:8000";
 
+async function getAuthHeaders() {
+  const session = await getSession();
+  return session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {};
+}
+
+async function request<T>(path: string, init?: RequestInit, requiresAuth = true): Promise<T> {
+  const authHeaders = requiresAuth ? await getAuthHeaders() : {};
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...authHeaders,
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
   });
 
   if (!response.ok) {
-    const detail = await response.text();
+    let detail = "";
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      detail = payload.detail ?? "";
+    } catch {
+      detail = await response.text();
+    }
     throw new Error(detail || `API request failed: ${response.status}`);
   }
 
   return response.json() as Promise<T>;
 }
 
-function shouldUseLocalStore() {
-  return !API_BASE_URL;
+export async function registerUser(payload: { name: string; email: string; password: string }) {
+  return request<{ access_token: string; user: { id: string; email: string; name: string } }>(
+    "/api/v1/auth/register",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    false,
+  );
 }
 
 export async function getJobs() {
-  if (shouldUseLocalStore()) {
-    return listStoredJobs();
-  }
   return request<JobListItem[]>("/api/v1/jobs");
 }
 
 export async function getJob(jobId: string) {
-  if (shouldUseLocalStore()) {
-    const job = getStoredJob(jobId);
-    if (!job) {
-      throw new Error("Job not found.");
-    }
-    return job;
-  }
   return request<JobDetail>(`/api/v1/jobs/${jobId}`);
 }
 
 export async function createJob(payload: {
-  project_id: string;
+  project_id?: string;
   title: string;
   source_type: SourceType;
   source_url?: string;
   filename?: string;
   mode: OutputMode;
 }) {
-  if (shouldUseLocalStore()) {
-    return createStoredJob(payload);
-  }
   return request<JobDetail>("/api/v1/jobs", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -78,15 +75,7 @@ export async function uploadJob(payload: {
   file: File;
   mode: OutputMode;
 }) {
-  if (shouldUseLocalStore()) {
-    return createStoredJob({
-      title: payload.title,
-      source_type: payload.source_type,
-      filename: payload.file.name,
-      mode: payload.mode,
-    });
-  }
-
+  const authHeaders = await getAuthHeaders();
   const formData = new FormData();
   formData.append("project_id", payload.project_id);
   formData.append("title", payload.title);
@@ -94,23 +83,37 @@ export async function uploadJob(payload: {
   formData.append("mode", payload.mode);
   formData.append("file", payload.file);
 
-  return request<JobDetail>("/api/v1/jobs/upload", {
+  const response = await fetch(`${API_BASE_URL}/api/v1/jobs/upload`, {
     method: "POST",
     body: formData,
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      detail = payload.detail ?? "";
+    } catch {
+      detail = await response.text();
+    }
+    throw new Error(detail || "Upload failed");
+  }
+
+  return response.json() as Promise<JobDetail>;
+}
+
+export async function retryJob(jobId: string) {
+  return request<JobDetail>(`/api/v1/jobs/${jobId}/retry`, {
+    method: "POST",
   });
 }
 
 export async function searchJobs(query: string) {
-  if (shouldUseLocalStore()) {
-    return searchStoredJobs(query);
-  }
   return request<SearchResult[]>(`/api/v1/search?query=${encodeURIComponent(query)}`);
 }
 
 export async function askJob(jobId: string, question: string) {
-  if (shouldUseLocalStore()) {
-    return askStoredJob(jobId, question);
-  }
   return request<AskResponse>(`/api/v1/jobs/${jobId}/chat`, {
     method: "POST",
     body: JSON.stringify({ question }),
@@ -118,9 +121,6 @@ export async function askJob(jobId: string, question: string) {
 }
 
 export async function exportJob(jobId: string, kind: string) {
-  if (shouldUseLocalStore()) {
-    return exportStoredJob(jobId, kind);
-  }
   return request<ExportResponse>(`/api/v1/jobs/${jobId}/export`, {
     method: "POST",
     body: JSON.stringify({ kind }),
