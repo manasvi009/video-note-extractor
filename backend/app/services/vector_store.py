@@ -12,7 +12,10 @@ class VectorStoreService:
     def __init__(self) -> None:
         settings = get_settings()
         self.collection_name = "video_note_chunks"
-        self.client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
+        qdrant_url = settings.qdrant_url
+        if qdrant_url and "://" not in qdrant_url:
+            qdrant_url = f"http://{qdrant_url}"
+        self.client = QdrantClient(url=qdrant_url, api_key=settings.qdrant_api_key)
 
     def ensure_collection(self) -> None:
         try:

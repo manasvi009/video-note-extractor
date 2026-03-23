@@ -25,7 +25,10 @@ services:
           name: video-note-extractor-redis
           property: connectionString
       - key: QDRANT_URL
-        sync: false
+        fromService:
+          name: video-note-extractor-qdrant
+          type: pserv
+          property: hostport
       - key: QDRANT_API_KEY
         sync: false
       - key: STORAGE_MODE
@@ -83,7 +86,10 @@ services:
           name: video-note-extractor-redis
           property: connectionString
       - key: QDRANT_URL
-        sync: false
+        fromService:
+          name: video-note-extractor-qdrant
+          type: pserv
+          property: hostport
       - key: QDRANT_API_KEY
         sync: false
       - key: STORAGE_MODE
@@ -114,6 +120,12 @@ services:
         value: "1024"
       - key: ALLOWED_UPLOAD_EXTENSIONS
         value: '["mp4","mp3","wav","mov","mkv"]'
+
+  - type: pserv
+    name: video-note-extractor-qdrant
+    runtime: image
+    image: qdrant/qdrant:v1.12.1
+    plan: free
 
 databases:
   - name: video-note-extractor-postgres
